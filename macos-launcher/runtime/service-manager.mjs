@@ -20,6 +20,7 @@ import { statusNotifications } from './status-notifications.mjs'
 import { readLoginShellEnvironment } from './login-shell.mjs'
 import { updateProfilePlugins, validatePluginUpdates } from './profile-plugin-update.mjs'
 import { stationDescendants, stationProcessTable } from './station-processes.mjs'
+import { readTunnelPreference, writeTunnelPreference } from './station-dot-tunnel-control.mjs'
 
 async function health(host, timeout = 2000, profilePlugins = false) {
   const signal = AbortSignal.timeout(timeout)
@@ -52,6 +53,16 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
   const server = createServer()
   let child, receipt, injections, admission, starting, stopping, normalStop, stopOperation, failure = '', state = 'stopped', closing = false
   let controlId = 0, statusRevision = 0
+  const dotTunnelPreference = join(dataRoot, 'global/.dsh-workflow/desktop/station-dot-tunnel-preference.json')
+  let dotTunnel = { enabled:false, state:'off', connected:null }
+  const acceptDotTunnelStatus = value => {
+    if (!value || typeof value.enabled !== 'boolean' || value.connected !== null ||
+        !['off','waiting_host','missing_config','invalid_config','checking_mcp','mcp_unavailable',
+          'client_running','client_exited','start_failed','stop_failed'].includes(value.state)) return
+    dotTunnel = { enabled:value.enabled, state:value.state, connected:null }
+    updates.publish()
+  }
+
   let notificationAuthorization, authorizing
   let preparingStop = false, pluginUpdate
   let currentPermissionMode
@@ -72,7 +83,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
         : failure || (state === 'running' ? lastHealth.message : state === 'stopped' ? stopMessage || null : null),
       observedAt: new Date().toISOString(),
     }, logs: [...logs], notificationAuthorization: notificationAuthorization ?? null,
-    notificationAuthorizationPending: Boolean(authorizing) }
+    notificationAuthorizationPending: Boolean(authorizing), dotTunnel }
   }
   const updates = statusNotifications(publicSnapshot)
   const log = value => {
@@ -222,6 +233,12 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
         ready = validatedReady
       } catch (error) { message = redact(error.message) }
     }
+    if (!child && !starting) {
+      try {
+        const enabled = (await readTunnelPreference(dotTunnelPreference)) === true
+        dotTunnel = {enabled, state:enabled ? 'waiting_host' : 'off', connected:null}
+      } catch { dotTunnel = {enabled:false, state:'invalid_config', connected:null} }
+    }
     lastHealth = { ready, message }
     updates.publish()
     return { identityVerified, value: publicSnapshot() }
@@ -271,6 +288,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
         owned.on('message', message => {
           if (child !== owned) return
           if (message?.type === 'shutdown-complete' && normalStop?.owned === owned) normalStop.acknowledged = true
+          if (message?.type === 'workflow-dot-tunnel-status') acceptDotTunnelStatus(message.value)
           if (message?.type === 'ready') ready.resolve(message)
           if (message?.type === 'fatal') ready.reject(new Error(redact(message.diagnostic || message.message)))
         })
@@ -343,6 +361,20 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
     }
     let stopInspection, pluginUpdates
     if (input.type === 'start-service') await start(input.permissionMode)
+    else if (input.type === 'set-dot-tunnel') {
+      if (typeof input.enabled !== 'boolean') throw new Error('Station 隧道开关参数无效')
+      if (starting || stopping || preparingStop) throw new Error('DSH 服务正在切换，请完成后再操作隧道。')
+      const owned = child
+      if (owned) {
+        const response = await hostRequest(owned, 'workflow-set-dot-tunnel', {enabled:input.enabled}, 12_000)
+        if (child !== owned) throw new Error('DSH 服务实例已改变')
+        acceptDotTunnelStatus(response.value)
+      } else {
+        await writeTunnelPreference(dotTunnelPreference,input.enabled)
+        acceptDotTunnelStatus({enabled:input.enabled,state:input.enabled?'waiting_host':'off',connected:null})
+      }
+    }
+
     else if (input.type === 'open-desktop') {
       const { value } = await snapshot()
       if (!value.service.ready || closing) throw new Error('请先启动 DSH 服务。')

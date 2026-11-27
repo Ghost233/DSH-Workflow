@@ -57,6 +57,24 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   String sdkMessage = '等待 MacLauncher';
   String notificationMessage = '故障通知：尚未查询授权状态。';
   bool requestingNotificationAuthorization = false;
+  bool dotTunnelEnabled = false;
+  bool changingDotTunnel = false;
+  String dotTunnelState = 'unknown';
+
+  String get dotTunnelMessage => switch (dotTunnelState) {
+    'off' => '隧道未开启。',
+    'waiting_host' => '已开启，等待 DSH Host 启动。',
+    'missing_config' => '已开启，但缺少本机 MCP 或隧道配置。',
+    'invalid_config' => '本机隧道配置无效，请检查文件权限和内容。',
+    'checking_mcp' => '正在验证本机 MCP 并启动隧道。',
+    'mcp_unavailable' => '本机 MCP 未就绪，隧道未启动。',
+    'client_running' => '隧道客户端运行中，ChatGPT 连通尚未核验。',
+    'client_exited' => '隧道客户端已退出，检查凭据或网络后再开启。',
+    'start_failed' => '隧道启动失败，请检查本机配置、凭据和客户端。',
+    'stop_failed' => '隧道停止未确认。请检查状态，不要重复启动。',
+    _ => '隧道状态未确认。',
+  };
+
   bool checkingUpdates = false, checkingPlugins = false;
   bool updatingPlugins = false;
   List<String> pluginUpdateResults = [];
@@ -344,6 +362,7 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
       'start-service',
       'update-plugins',
       'authorize-notifications',
+      'set-dot-tunnel',
     }.contains(type)) {
       await _ensureStationManager('service');
     }
@@ -381,6 +400,12 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
 
   void _setServiceSnapshot(Map<String, Object?> value) {
     _service = ServiceStatus.fromJson(objectValue(value['service']));
+    final dot = value['dotTunnel'];
+    dotTunnelState = dot is Map && dot['state'] is String
+        ? dot['state'] as String
+        : 'unknown';
+    dotTunnelEnabled = dot is Map && dot['enabled'] == true;
+
     final notification = value['notificationAuthorization'];
     if (notification is Map) {
       final settings = notification['authorization'];
@@ -582,6 +607,18 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<ServiceStatus> serviceStatus() async {
     await _serviceCommand('status');
     return _service;
+  }
+
+  Future<void> setDotTunnelEnabled(bool enabled) async {
+    if (_closed || exiting || changingDotTunnel) return;
+    changingDotTunnel = true;
+    notifyListeners();
+    try {
+      await _serviceCommand('set-dot-tunnel', fields: {'enabled': enabled});
+    } finally {
+      changingDotTunnel = false;
+      if (!_closed) notifyListeners();
+    }
   }
 
   Future<void> authorizeServiceNotifications() async {

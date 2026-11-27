@@ -384,6 +384,17 @@ class _LauncherPageState extends State<LauncherPage> {
             enabled: model.serviceSnapshot.ready == true,
           ),
         Text('Web', style: Theme.of(context).textTheme.titleMedium),
+        SwitchListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Station 隧道'),
+          subtitle: Text(model.dotTunnelMessage),
+          value: model.dotTunnelEnabled,
+          onChanged: model.changingDotTunnel
+              ? null
+              : (enabled) =>
+                    unawaited(_act(() => model.setDotTunnelEnabled(enabled))),
+        ),
+
         Wrap(
           spacing: 8,
           runSpacing: 8,

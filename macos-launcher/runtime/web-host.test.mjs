@@ -4,7 +4,8 @@ import { spawn } from 'node:child_process'
 import { createServer } from "node:net"
 import { once } from "node:events"
 import { createRequire } from 'node:module'
-import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { createHash } from 'node:crypto'
+import { mkdtemp, mkdir, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -99,6 +100,34 @@ test('Web Host starts the real DSH runtime and exits cleanly', { timeout: 60_000
   assert.equal((await mcp("Bearer incorrect")).status,401)
   const projection = (await (await mcp()).json()).result.structuredContent
   assert.deepEqual(projection.sessions,[{label:"Isolated fixture",status:"unavailable"}])
+  const toggle = async (enabled,requestId) => {
+    child.send({type:'workflow-set-dot-tunnel',enabled,requestId})
+    return await receive(message => message.type === 'workflow-set-dot-tunnel' && message.requestId === requestId)
+  }
+  const enabled = await toggle(true,1)
+  assert.deepEqual(enabled.value,{enabled:true,state:'missing_config',connected:null})
+  assert.deepEqual(JSON.parse(await readFile(join(receipt,'station-dot-tunnel-preference.json'),'utf8')),{enabled:true})
+  const tunnelDirectory = join(await realpath(root), 'fixture-tunnel')
+  await mkdir(tunnelDirectory,{mode:0o700})
+  // Pinned local stub ignores all arguments and cannot contact a remote control plane.
+  const client = '#!/bin/sh\nexec /bin/sleep 120\n'
+  await writeFile(join(tunnelDirectory,'tunnel-client'),client,{mode:0o700})
+  await writeFile(join(tunnelDirectory,'runtime.key'),'synthetic-fixture',{mode:0o600})
+  await writeFile(join(receipt,'station-dot-tunnel.json'),JSON.stringify({
+    directory:tunnelDirectory,tunnelId:'tunnel_'+'a'.repeat(32),
+    clientSha256:createHash('sha256').update(client).digest('hex'),
+  }),{mode:0o600})
+  const running = await toggle(true,2)
+  assert.deepEqual(running.value,{enabled:true,state:'client_running',connected:null})
+  const leases = async () => (await readdir(tunnelDirectory)).filter(name=>name.startsWith('synthetic-upstream-'))
+  assert.equal((await leases()).length,1)
+  assert.deepEqual((await toggle(true,3)).value,running.value)
+  assert.equal((await leases()).length,1)
+  const disabled = await toggle(false,4)
+  assert.deepEqual(disabled.value,{enabled:false,state:'off',connected:null})
+  assert.deepEqual(await leases(),[])
+  assert.equal((await request()).status,200)
+  assert.equal((await mcp()).status,200)
   child.send({ type: 'shutdown' })
   await receive(message => message.type === 'shutdown-complete')
   assert.deepEqual(await Promise.race([exited, delay(1500, 'Host stayed alive after its shutdown acknowledgement', { ref: false })]),

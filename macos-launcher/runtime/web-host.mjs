@@ -10,6 +10,7 @@ import { startStationDotFromHost } from './station-dot-loopback.mjs'
 import { loadObservationConfig, startSessionObservation } from './session-observation-mcp.mjs'
 import { createStationPullTools } from './station-dot-pull-tools.mjs'
 import { loadStationDotTunnelConfig, openStationDotPromptHost } from './station-dot-host-config.mjs'
+import { createStationDotTunnelControl, readTunnelPreference, writeTunnelPreference } from './station-dot-tunnel-control.mjs'
 
 /** Start the official Web profile using the packaged runtime and Station's existing profile. */
 export async function startWebHost({ resources, profile, overlay }) {
@@ -31,15 +32,68 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
   exit = () => {}, launchHost = startWebHost, readHost = readDesktopHost, ipc = process }) {
   if (dotTunnel?.enabled && dotTunnelComposition?.enabled) throw Error('multiple_dot_tunnel_owners')
   const application = launchHost({ resources, profile, overlay })
-  let tunnel = composeBackendDotTunnel(dotTunnelComposition, application) ?? createDshDotTunnelLifecycle(dotTunnel)
+  const tunnel = composeBackendDotTunnel(dotTunnelComposition, application) ?? createDshDotTunnelLifecycle(dotTunnel)
   let closing, observation, observationConfig, stationDot, stationPrompt
   let observationStarting, stationDotStarting
   const send = message => new Promise((accept, reject) => {
     if (!ipc.connected || !ipc.send) return accept()
     ipc.send(message, error => error ? reject(error) : accept())
   })
+  const observationPath = join(receiptDirectory, 'session-observation-mcp.json')
+  const preferencePath = join(receiptDirectory, 'station-dot-tunnel-preference.json')
+  let hostReady = false
+  function ensureObservation(ctx, config) {
+    if (closing || observationConfig) return Promise.resolve(observationConfig)
+    observationStarting ??= (async () => {
+      config ??= await loadObservationConfig(observationPath)
+      if (!config || closing) return
+      const prompt = await openStationDotPromptHost({
+        directory:join(receiptDirectory,'station-dot-approved-prompts'),
+        sessions:config.sessions,bearer:config.bearer,controller:ctx.sessionController,
+      }).catch(() => { console.error('Station Dot 提示词投递未启用：批准目录或回执不可用。'); return null })
+      try {
+        if (closing) { prompt?.close(); return }
+        observation = await startSessionObservation({
+          config, sessionController:ctx.sessionController,
+          ...createStationPullTools(ctx, config),
+          approvedPromptDelivery:prompt?.deliver,
+          // Local completion cache for pull-based session status; no outbound subscription.
+          observeTurnEnds:listener => ctx.on('session/event', listener),
+        })
+        stationPrompt = prompt
+        observationConfig = config
+        return config
+      } catch (error) { prompt?.close(); throw error }
+    })().finally(() => { observationStarting = undefined })
+    return observationStarting
+  }
+  const managedTunnel = tunnel ? null : createStationDotTunnelControl({
+    readEnabled:() => readTunnelPreference(preferencePath),
+    writeEnabled:enabled => writeTunnelPreference(preferencePath,enabled),
+    getConfig:async () => {
+      const transport = await loadStationDotTunnelConfig(join(receiptDirectory,'station-dot-tunnel.json'))
+      if (!transport) return null
+      return (observationConfig ?? await loadObservationConfig(observationPath)) ? transport : null
+    },
+    createTunnel:(config,publish) => composeBackendDotTunnel({
+      ...config,publish,
+      openDirectPlugin:async ({ctx,signal}) => {
+        if (signal.aborted || closing) return
+        const config = await ensureObservation(ctx)
+        if (!config || signal.aborted || closing) return
+        return {
+          capability:'station.observation.owner_scoped',
+          allowApprovedDraft:typeof stationPrompt?.deliver === 'function',
+          endpoint:'http://127.0.0.1:'+config.port+'/mcp',
+          authorization:'Bearer '+config.bearer,
+          close:async () => {}, // Web Host owns and closes the listener.
+        }
+      },
+    },application),
+    onStatus:value => { void send({type:'workflow-dot-tunnel-status',value}).catch(() => {}) },
+  })
   const stop = () => closing ??= (async () => {
-    try { await tunnel?.stop() } catch { console.error('DSH Dot Tunnel 子进程停止未确认。') }
+    try { await (managedTunnel ? managedTunnel.dispose() : tunnel?.stop()) } catch { console.error('DSH Dot Tunnel 子进程停止未确认。') }
     const app = await application.catch(() => undefined)
     if (!app) return
     await Promise.all([stationDotStarting, observationStarting])
@@ -56,6 +110,19 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
   })()
   const onMessage = message => {
     if (message?.type === 'shutdown') void stop().catch(error => { console.error(error); process.exitCode = 1 })
+    if (message?.type === 'workflow-set-dot-tunnel') {
+      const {type,requestId,enabled} = message
+      void (async () => {
+        try {
+          if (!hostReady || closing || !managedTunnel) throw Error('tunnel_host_unavailable')
+          const value = await managedTunnel.setEnabled(enabled)
+          await send({type,requestId,value})
+        } catch {
+          await send({type,requestId,error:'Station 隧道设置未完成，请查看当前状态。'})
+        }
+      })().catch(() => {})
+      return
+    }
     if (!['workflow-desktop-connect', 'workflow-desktop-session', 'workflow-desktop-drag'].includes(message?.type)) return
     const { type, requestId } = message
     void (async () => {
@@ -94,39 +161,18 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
   }
   if (!receipt || receipt.pid !== process.pid) throw new Error('Station Web Host receipt is missing or belongs to another process')
   if (!closing) {
-    observationStarting = (async () => {
-      const config = await loadObservationConfig(join(receiptDirectory, 'session-observation-mcp.json'))
-      if (!config || closing) return
-      stationPrompt = await openStationDotPromptHost({directory:join(receiptDirectory,'station-dot-approved-prompts'),
-        sessions:config.sessions,bearer:config.bearer,controller:ctx.sessionController})
-        .catch(()=>{ console.error('Station Dot 提示词投递未启用：批准目录或回执不可用。');return null })
-      if (closing) return
-      observation = await startSessionObservation({
-        config, sessionController: ctx.sessionController,
-        ...createStationPullTools(ctx, config),
-        approvedPromptDelivery:stationPrompt?.deliver,
-        // Local completion cache for pull-based session status; no outbound subscription.
-        observeTurnEnds: listener => ctx.on("session/event", listener),
-      })
-      observationConfig = config
-    })().catch(() => { console.error('会话观测 MCP 未启用：配置、端口或被动会话接口不可用。') })
+    const observationReady = ensureObservation(ctx).catch(() => {
+      console.error('会话观测 MCP 未启用：配置、端口或被动会话接口不可用。')
+    })
     stationDotStarting = startStationDotFromHost({ctx, receiptDirectory}).then(value => {stationDot = value})
       .catch(() => { console.error('Station Dot 只读接口未启用：配置、端口或被动会话接口不可用。') })
-    await Promise.all([observationStarting, stationDotStarting])
+    await Promise.all([observationReady, stationDotStarting])
   }
-  if (!closing && !tunnel && observationConfig) {
-    try {
-      const config=await loadStationDotTunnelConfig(join(receiptDirectory,'station-dot-tunnel.json'))
-      if (config && !closing) tunnel=composeBackendDotTunnel({...config, openDirectPlugin:async()=>({
-        capability:'station.observation.owner_scoped',
-        allowApprovedDraft:typeof stationPrompt?.deliver==='function',
-        endpoint:'http://127.0.0.1:'+observationConfig.port+'/mcp',
-        authorization:'Bearer '+observationConfig.bearer,
-        close:async()=>{}, // Web Host owns and closes the listener.
-      })},application)
-    } catch { console.error('Station Dot 隧道未启用：专用配置无效。') }
+  if (!closing) {
+    hostReady = true
+    if (managedTunnel) void managedTunnel.start().catch(() => {})
+    else void tunnel?.start()
   }
-  if (!closing) void tunnel?.start()
   await send({ type: 'ready', url: receipt.url, injections: [] })
   return { stop }
 }
