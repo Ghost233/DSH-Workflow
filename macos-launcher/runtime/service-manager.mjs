@@ -359,7 +359,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
     if (pluginUpdate && ['start-service', 'inspect-stop', 'stop-service', 'restart-service', 'update-plugins'].includes(input.type)) {
       throw new Error('DSH 插件正在更新，请等待更新结束。')
     }
-    let stopInspection, pluginUpdates
+    let stopInspection, pluginUpdates, dotSetup
     if (input.type === 'start-service') await start(input.permissionMode)
     else if (input.type === 'set-dot-tunnel') {
       if (typeof input.enabled !== 'boolean') throw new Error('Station 隧道开关参数无效')
@@ -373,6 +373,12 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
         await writeTunnelPreference(dotTunnelPreference,input.enabled)
         acceptDotTunnelStatus({enabled:input.enabled,state:input.enabled?'waiting_host':'off',connected:null})
       }
+    } else if (input.type === 'dot-setup-preview') {
+      const owned=child
+      if (!owned || starting || stopping || preparingStop) throw new Error('请先启动 DSH 服务，再读取可选会话。')
+      const response=await hostRequest(owned,'workflow-dot-setup-preview',{},6000)
+      if(child!==owned)throw new Error('DSH 服务实例已改变')
+      dotSetup=response.value
     } else if (input.type === 'configure-dot-tunnel') {
       const owned = child
       if (!owned || starting || stopping || preparingStop)
@@ -472,6 +478,7 @@ export async function serveManager({ dataRoot, resources, home, loginEnvironment
     const { value, identityVerified } = await snapshot()
     if (stopInspection) value.stop = stopInspection
     if (pluginUpdates) value.pluginUpdates = pluginUpdates
+    if (dotSetup) value.dotSetup = dotSetup
     if (input.type === 'connect-web') {
       const paused = identityVerified && stopOperation?.owned === child && admission?.locked
       if (value.service.ready !== true && !paused || !receipt || !child || !injections || !admission) {

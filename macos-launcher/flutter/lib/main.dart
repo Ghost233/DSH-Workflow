@@ -9,7 +9,7 @@ import 'package:flutter/material.dart';
 import 'package:maclauncher_sdk/maclauncher_sdk.dart';
 
 import 'application_probe.dart';
-import 'dot_configuration_dialog.dart';
+import 'dot_guided_setup_dialog.dart';
 import 'launcher_controller.dart';
 import 'lifecycle_probe_process.dart';
 import 'maclauncher_integration.dart';
@@ -331,7 +331,8 @@ class _LauncherPageState extends State<LauncherPage> {
   Future<void> _openDotConfiguration() async {
     final pairing = await showDialog<Map<String, Object?>>(
       context: context,
-      builder: (_) => DotConfigurationDialog(native: model.native),
+      builder: (_) =>
+          DotGuidedSetupDialog(native: model.native, load: model.loadDotSetup),
     );
     if (pairing != null && mounted) await model.configureDotTunnel(pairing);
   }

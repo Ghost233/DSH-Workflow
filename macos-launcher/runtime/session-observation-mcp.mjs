@@ -38,6 +38,12 @@ const watchTool = Object.freeze({
     required:['session_label'],additionalProperties:false },
   annotations:{readOnlyHint:true,destructiveHint:false,idempotentHint:true,openWorldHint:false},
 })
+const globalWatchTool = Object.freeze({
+  ...watchTool,
+  description:'Poll bounded activity markers for exactly one DSH session by ID. Requires the paired Dot connection, not a per-session allowlist. Does not read conversation text or modify sessions.',
+  inputSchema:{type:'object',properties:{session_id:{type:'string',pattern:ID.source,maxLength:128},after:{type:'integer',minimum:-1}},
+    required:['session_id'],additionalProperties:false},
+})
 const approvedPromptTool = Object.freeze({
   name: 'send_approved_draft',
   description: 'Queue one exact owner-approved draft to a configured session. A matching local consent receipt must already exist.',
@@ -56,10 +62,11 @@ function approvedPromptArgs(a) {
 }
 const watchKinds=new Set(['turn/start','turn/end','user/message','assistant/message','assistant/attempt'])
 const watchStates=new Set(['baseline_only','complete','busy','deadline','source_unavailable','invalid_page','cursor_regressed','history_budget'])
-function watchArgs(args) {
+function watchArgs(args, global) {
+  const field=global?'session_id':'session_label'
   return args && typeof args==='object' && !Array.isArray(args) &&
-    typeof args.session_label==='string' && args.session_label.length<=64 &&
-    Object.keys(args).every(k=>k==='session_label'||k==='after') &&
+    typeof args[field]==='string' && (global?ID.test(args[field]):args[field].length<=64) &&
+    Object.keys(args).every(k=>k===field||k==='after') &&
     (!Object.hasOwn(args,'after')||Number.isSafeInteger(args.after)&&args.after>=-1)
 }
 function watchResult(r) {
@@ -99,10 +106,11 @@ export async function loadObservationConfig(path) {
 
 export function validateObservationConfig(config) {
   if (!config || typeof config !== 'object' || Array.isArray(config) ||
-      !['bearer,port,sessions','activeSessionIds,bearer,port,sessions'].includes(Object.keys(config).sort().join(',')) ||
+      !['bearer,port,sessions','activeSessionIds,bearer,port,sessions','bearer,globalActiveList,port,sessions'].includes(Object.keys(config).sort().join(',')) ||
       typeof config.bearer !== 'string' || !TOKEN.test(config.bearer) ||
       !Number.isInteger(config.port) || config.port < 1024 || config.port > 65535 ||
-      !Array.isArray(config.sessions) || config.sessions.length < 1 || config.sessions.length > 8) {
+      !Array.isArray(config.sessions) || (config.sessions.length < 1 && config.globalActiveList !== true) || config.sessions.length > 8 ||
+      (Object.hasOwn(config,'globalActiveList') && config.globalActiveList !== true)) {
     throw new Error('observation_config_invalid')
   }
   if (Object.hasOwn(config, 'activeSessionIds')) {
@@ -246,7 +254,7 @@ export async function startSessionObservation({ config, sessionController, obser
     }
     if (msg.method === 'ping') return respond({})
     if (msg.method === 'tools/list') return respond({tools:[tool,...(activeList?[activeTool]:[]),
-      ...(watchedHistory?[watchTool]:[]),...(modern&&approvedPromptDelivery?[approvedPromptTool]:[])]})
+      ...(watchedHistory?[config.globalActiveList?globalWatchTool:watchTool]:[]),...(modern&&approvedPromptDelivery?[approvedPromptTool]:[])]})
     if (msg.method !== 'tools/call') return error(r,id,-32601,'Method not found')
     if (modern && approvedPromptDelivery && msg.params?.name===approvedPromptTool.name) {
       const args=msg.params.arguments
@@ -267,12 +275,12 @@ export async function startSessionObservation({ config, sessionController, obser
     }
     if(watchedHistory&&msg.params?.name===watchTool.name){
       const args=msg.params.arguments
-      if(!watchArgs(args))return error(r,id,-32602,'Invalid params')
-      const signed=selections.find(row=>row.label===args.session_label)
-      if(!signed||closed||watchInFlight)return error(r,id,-32000,'Watched session unavailable')
+      if(!watchArgs(args,config.globalActiveList===true))return error(r,id,-32602,'Invalid params')
+      const sessionId=config.globalActiveList?args.session_id:selections.find(row=>row.label===args.session_label)?.id
+      if(!sessionId||closed||watchInFlight)return error(r,id,-32000,'Watched session unavailable')
       watchInFlight=true
       try {
-        const value=await watchedHistory({selectedSession:signed.id,after:args.after??null})
+        const value=await watchedHistory({selectedSession:sessionId,after:args.after??null})
         if(closed)return error(r,id,-32000,'Watched session unavailable')
         const result=watchResult(value)
         if(!result)return error(r,id,-32000,'Watched session unavailable')

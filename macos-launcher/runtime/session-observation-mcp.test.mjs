@@ -5,6 +5,7 @@ import { once } from 'node:events'
 import { mkdtemp, rm, chmod, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { createStationPullTools } from './station-dot-pull-tools.mjs'
 import { loadObservationConfig, startSessionObservation } from './session-observation-mcp.mjs'
 
 async function config() {
@@ -100,4 +101,33 @@ test("only new terminal Host events for allowlisted sessions contribute completi
  assert.doesNotMatch(JSON.stringify(result),/PRIVATE|plugin|private-session/)
  await f.srv.close()
  assert.equal(disposed,true)
+})
+
+test('paired global watch accepts one native ID without selections and forwards no content',async t=>{
+ const c={...await config(),sessions:[],globalActiveList:true}
+ const calls=[]
+ const sessionController={state:()=>null,events:async ({address})=>{
+  calls.push(address.sessionId)
+  if(address.sessionId!=='unlisted-test-session')throw Error('unknown')
+  return {cursor:0,hasMore:false,records:[{type:'event',event:{seq:0,time:1,type:'turn/end',data:{text:'PRIVATE_BODY'}}}]}
+ }}
+ const srv=await startSessionObservation({config:c,sessionController,...createStationPullTools({sessionController},c)})
+ t.after(()=>srv.close())
+ const rpc=(method,params,auth=true)=>fetch('http://127.0.0.1:'+c.port+'/mcp',{
+  method:'POST',headers:{authorization:'Bearer '+(auth?c.bearer:'invalid'),'content-type':'application/json',accept:'application/json, text/event-stream'},
+  body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})
+ }).then(r=>r.json())
+ const call=(args,auth)=>rpc('tools/call',{name:'watch_session',arguments:args},auth)
+ assert.deepEqual(await call({session_id:'unlisted-test-session'},false),{error:'authentication_required'})
+ const tool=(await rpc('tools/list',{})).result.tools.find(x=>x.name==='watch_session')
+ assert.deepEqual(tool.inputSchema.required,['session_id'])
+ assert.equal((await call({session_id:['unlisted-test-session']})).error.code,-32602)
+ assert.equal((await call({session_id:'unlisted-test-session',session_label:'legacy'})).error.code,-32602)
+ assert.deepEqual(calls,[])
+ assert.equal((await call({session_id:'unlisted-test-session'})).result.structuredContent.status,'baseline_only')
+ const delta=(await call({session_id:'unlisted-test-session',after:-1})).result.structuredContent
+ assert.deepEqual(delta.events,[{seq:0,time:1,kind:'turn/end'}])
+ assert.doesNotMatch(JSON.stringify(delta),/PRIVATE_BODY|unlisted-test-session/)
+ assert.equal((await call({session_id:'unknown-session'})).result.structuredContent.status,'source_unavailable')
+ assert.deepEqual(calls,['unlisted-test-session','unlisted-test-session','unknown-session'])
 })

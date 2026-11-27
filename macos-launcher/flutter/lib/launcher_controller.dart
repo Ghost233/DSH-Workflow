@@ -615,6 +615,12 @@ class LauncherController extends ChangeNotifier implements LauncherActions {
   Future<void> setDotTunnelEnabled(bool enabled) =>
       _runDotTunnelCommand('set-dot-tunnel', fields: {'enabled': enabled});
 
+  Future<Map<String, Object?>> loadDotSetup() async {
+    return objectValue(
+      (await _serviceCommand('dot-setup-preview'))['dotSetup'],
+    );
+  }
+
   Future<void> configureDotTunnel(Map<String, Object?> pairing) =>
       _runDotTunnelCommand(
         'configure-dot-tunnel',

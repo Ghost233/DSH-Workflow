@@ -1,9 +1,9 @@
 // Unwired, on-demand list for a private host. Never consult persisted sessions.
 import {createStationObservationV2} from './station-dot-observation-v2.mjs'
 const idShape=id=>typeof id==='string'&&id.length>0&&id.length<=128&&!/[\x00-\x1f\x7f]/.test(id)
-export function createStationActiveListV2({enabled,ctx,key,readApproved}={}) {
+export function createStationActiveListV2({enabled,ctx,key,readApproved,globalActiveList=false}={}) {
   if(enabled!==true)return null
-  if(typeof ctx?.agents?.list!=='function'||typeof readApproved!=='function')throw new TypeError('invalid_live_scope')
+  if(typeof ctx?.agents?.list!=='function'||(!globalActiveList&&typeof readApproved!=='function'))throw new TypeError('invalid_live_scope')
   let snapshot=null, reading=false
   const approved=()=>{
     const ids=readApproved()
@@ -11,7 +11,8 @@ export function createStationActiveListV2({enabled,ctx,key,readApproved}={}) {
       throw new TypeError('invalid_live_membership')
     return new Set(ids)
   }
-  const observer=createStationObservationV2({enabled:true,key,readApproved:()=>{
+  const observer=createStationObservationV2({enabled:true,key,maxScope:globalActiveList?4096:128,readApproved:()=>{
+    if(globalActiveList)return snapshot?.ids??[]
     const policy=approved()
     return snapshot?.ids.filter(id=>policy.has(id))??[]
   }})
@@ -25,7 +26,7 @@ export function createStationActiveListV2({enabled,ctx,key,readApproved}={}) {
       reading=true
       snapshot=null
       try{
-        const scope=approved()
+        const scope=globalActiveList?null:approved()
         // One local snapshot of current in-memory Agent handles. No per-agent
         // payload, persisted controller, pending approvals, or activity history.
         let handles
@@ -34,7 +35,7 @@ export function createStationActiveListV2({enabled,ctx,key,readApproved}={}) {
         const ids=new Set()
         for(const handle of handles){
           const id=handle?.id
-          if(scope.has(id))ids.add(id)
+          if(idShape(id)&&(scope===null||scope.has(id)))ids.add(id)
         }
         snapshot={ids:[...ids],capturedAt:new Date().toISOString()}
         return project(await observer.begin(()=>({state:'active',pending:[]})))

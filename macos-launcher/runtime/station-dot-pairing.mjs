@@ -46,7 +46,8 @@ function localPort() {
 }
 
 export async function saveStationDotPairing(directory, input) {
-  if (!input || Object.keys(input).sort().join(',') !== 'clientSha256,directory,sessions,tunnelId') throw bad()
+  if (!input || !['clientSha256,directory,sessions,tunnelId','clientSha256,directory,globalActiveList,sessions,tunnelId'].includes(Object.keys(input).sort().join(','))) throw bad()
+  if (Object.hasOwn(input,'globalActiveList') && input.globalActiveList !== true) throw bad()
   const {directory: clientDirectory, tunnelId, clientSha256, sessions} = input
   const transport = {directory:clientDirectory, tunnelId, clientSha256}
   validateStationDotTunnelConfig(transport)
@@ -54,7 +55,7 @@ export async function saveStationDotPairing(directory, input) {
     port: await localPort(),
     bearer: randomBytes(32).toString('base64url'),
     sessions,
-    activeSessionIds: sessions?.map?.(row => row.id),
+    ...(input.globalActiveList === true ? {globalActiveList:true} : {activeSessionIds:sessions?.map?.(row => row.id)}),
   })
   const privateDir = await lstat(directory)
   if (!privateDir.isDirectory() || privateDir.uid !== process.getuid() || (privateDir.mode & 0o777) !== 0o700)

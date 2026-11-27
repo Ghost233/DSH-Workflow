@@ -10,6 +10,7 @@ import { startStationDotFromHost } from './station-dot-loopback.mjs'
 import { loadObservationConfig, startSessionObservation } from './session-observation-mcp.mjs'
 import { createStationPullTools } from './station-dot-pull-tools.mjs'
 import { loadStationDotTunnelConfig, openStationDotPromptHost } from './station-dot-host-config.mjs'
+import { dotSetupPreview, guidedPairing } from './station-dot-setup.mjs'
 import { readStationDotPairing, saveStationDotPairing } from './station-dot-pairing.mjs'
 import { createStationDotTunnelControl, readTunnelPreference, writeTunnelPreference } from './station-dot-tunnel-control.mjs'
 
@@ -119,13 +120,27 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
   })()
   const onMessage = message => {
     if (message?.type === 'shutdown') void stop().catch(error => { console.error(error); process.exitCode = 1 })
+    if (message?.type === 'workflow-dot-setup-preview') {
+      const {type,requestId}=message
+      void (async () => {
+        try {
+          if (!hostReady || closing || !managedTunnel) throw Error('tunnel_host_unavailable')
+          await send({type,requestId,value:await dotSetupPreview(receiptDirectory)})
+        } catch {
+          await send({type,requestId,error:'无法读取本机 Dot 配对或 DSH 会话列表。'})
+        }
+      })().catch(() => {})
+      return
+    }
     if (message?.type === 'workflow-configure-dot-tunnel') {
       const {type,requestId,pairing} = message
       void (async () => {
         try {
           if (!hostReady || closing || !managedTunnel) throw Error('tunnel_host_unavailable')
           const value = await managedTunnel.configure(async () => {
-            await saveStationDotPairing(receiptDirectory, pairing)
+            const {ctx}=await application
+            const next=pairing?.mode==='guided' ? await guidedPairing(receiptDirectory,ctx.sessionController,pairing):pairing
+            await saveStationDotPairing(receiptDirectory, next)
             await observationStarting
             await observation?.close()
             observation = undefined
@@ -137,7 +152,11 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
         } catch (error) {
           const diagnostic = error?.message === 'tunnel_must_be_stopped_before_pairing'
             ? '请先关闭隧道，再保存新的 Dot 配对。'
-            : '配对未确认。请核对隧道 ID、官方客户端目录与校验值，以及会话 ID。'
+            : ({
+              dot_setup_official_client_missing: '未找到官方 Tunnel 客户端，请先安装。',
+              dot_setup_runtime_key_required: '未找到可复用的运行密钥，请在本机输入。',
+              dot_setup_session_scope_invalid: '会话列表已变化，请重新勾选。',
+            })[error?.message] ?? '配对未确认。请检查本机连接资料后重试。'
           await send({type,requestId,error:diagnostic})
         }
       })().catch(() => {})

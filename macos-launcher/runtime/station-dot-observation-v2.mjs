@@ -1,6 +1,6 @@
 import { createHmac, randomUUID } from 'node:crypto'
 
-const LIMIT=100,MAX=128
+const LIMIT=100,MAX=4096
 const goodId=x=>typeof x==='string'&&x.length>0&&x.length<=128&&!/[\x00-\x1f\x7f]/.test(x)
 const states=new Set(['active','inactive','unavailable'])
 const classes=new Set(['approval','question','other'])
@@ -8,9 +8,9 @@ const bad=()=>{throw new TypeError('invalid_scoped_observation_v2')}
 
 // Pure, unpublished v2 API. A private host supplies a finite owner-approved ID
 // set, scope-specific local HMAC key, and sanitized native observations.
-export function createStationObservationV2({enabled,key,readApproved,concurrency=12,readMs=350,pageMs=1500}={}) {
+export function createStationObservationV2({enabled,key,readApproved,maxScope=128,concurrency=12,readMs=350,pageMs=1500}={}) {
   if(enabled!==true)return null
-  if(!Buffer.isBuffer(key)||key.length!==32||typeof readApproved!=='function')bad()
+  if(!Buffer.isBuffer(key)||key.length!==32||typeof readApproved!=='function'||!Number.isSafeInteger(maxScope)||maxScope<1||maxScope>MAX)bad()
   if(![concurrency,readMs,pageMs].every(Number.isSafeInteger)||concurrency<1||concurrency>16||
      readMs<1||readMs>350||pageMs<readMs||pageMs>3000)bad()
   key=Buffer.from(key)
@@ -20,7 +20,7 @@ export function createStationObservationV2({enabled,key,readApproved,concurrency
   const h=(label,value)=>createHmac('sha256',key).update(JSON.stringify([label,value])).digest('hex')
   function scope(){
     const a=readApproved()
-    if(!Array.isArray(a)||a.length>MAX||a.some(x=>!goodId(x))||new Set(a).size!==a.length)bad()
+    if(!Array.isArray(a)||a.length>maxScope||a.some(x=>!goodId(x))||new Set(a).size!==a.length)bad()
     return a.slice().sort()
   }
   function begin(readState){
@@ -60,7 +60,7 @@ export function createStationObservationV2({enabled,key,readApproved,concurrency
     let offset=0
     if(cursor!==null){
       if(typeof cursor!=='string'||cursor.length>165)bad()
-      const m=cursor.match(/^([0-9a-f-]{36})\.([0-9a-f-]{36})\.(0|[1-9][0-9]{0,2})\.([0-9a-f]{64})$/)
+      const m=cursor.match(/^([0-9a-f-]{36})\.([0-9a-f-]{36})\.(0|[1-9][0-9]{0,3})\.([0-9a-f]{64})$/)
       if(!m||h('cursor',m.slice(1,4))!==m[4])bad()
       if(m[1]!==epoch)return envelope('host_restarted')
       if(m[2]!==current.id)return envelope('snapshot_superseded')

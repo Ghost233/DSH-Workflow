@@ -52,17 +52,17 @@ class _DotConfigurationDialogState extends State<DotConfigurationDialog> {
       setState(() => _error = '请填写已有隧道 ID、选择客户端目录并核对官方 SHA-256。');
       return;
     }
-    if (ids.isEmpty ||
-        ids.length > 8 ||
+    if (ids.length > 8 ||
         ids.toSet().length != ids.length ||
         ids.any((id) => !RegExp(r'^[A-Za-z0-9_-]{1,128}$').hasMatch(id))) {
-      setState(() => _error = '请填写 1–8 个不重复的会话 ID，每行一个。');
+      setState(() => _error = '会话详情可留空；填写时最多 8 个不重复 ID。');
       return;
     }
     Navigator.of(context).pop({
       'directory': _directory,
       'tunnelId': tunnelId,
       'clientSha256': sha,
+      'globalActiveList': true,
       'sessions': [
         for (var i = 0; i < ids.length; i++)
           {'id': ids[i], 'label': '会话 ${i + 1}'},
@@ -80,7 +80,7 @@ class _DotConfigurationDialogState extends State<DotConfigurationDialog> {
           crossAxisAlignment: CrossAxisAlignment.start,
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('使用已有隧道。Dot 只能读取你在下方授权的会话。保存不会立即连接。'),
+            const Text('使用已有隧道。全局活跃清单无需授权单个会话。保存不会立即连接。'),
             TextField(
               controller: _tunnel,
               decoration: const InputDecoration(labelText: '已有隧道 ID'),
@@ -100,7 +100,7 @@ class _DotConfigurationDialogState extends State<DotConfigurationDialog> {
               minLines: 2,
               maxLines: 4,
               decoration: const InputDecoration(
-                labelText: '允许 Dot 读取的会话 ID（每行一个）',
+                labelText: '可选：允许读取详情的会话 ID（每行一个）',
               ),
             ),
             if (_error case final error?) Text(error),

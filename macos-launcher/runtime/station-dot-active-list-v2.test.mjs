@@ -34,3 +34,20 @@ test('revocation invalidates unfinished cursor; unavailable inventory is not an 
   const b=await service.begin()
   assert.equal(b.gap,'live_inventory_unavailable');assert.equal(b.coverage,'partial')
 })
+
+test('global lookup needs no detail scopes and paginates one snapshot without revealing IDs',async()=>{
+  let calls=0
+  let handles=Array.from({length:205},(_,i)=>({id:'global-private-'+i,content:'not_exposed'}))
+  const ctx={agents:{list(){calls++;return handles}}}
+  const service=createStationActiveListV2({enabled:true,key,ctx,globalActiveList:true})
+  const a=await service.begin()
+  assert.equal(a.rows.length,100)
+  handles=[{id:'another-after-capture'}]
+  const b=await service.page(a.next_cursor)
+  const c=await service.page(b.next_cursor)
+  assert.deepEqual([a.rows.length,b.rows.length,c.rows.length],[100,100,5])
+  assert.equal(c.next_cursor,null)
+  assert.equal(calls,1)
+  assert.equal(new Set([...a.rows,...b.rows,...c.rows].map(r=>r.alias)).size,205)
+  assert.ok(!/global-private|not_exposed|after-capture/.test(JSON.stringify([a,b,c])))
+})
