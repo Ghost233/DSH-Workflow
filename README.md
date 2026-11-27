@@ -26,6 +26,18 @@ Station 首次启动时把[默认名单](default-startup-plugins.json)复制到 
 
 使用 CodeGraph 时，在需要检索的工程中自行运行 `codegraph init`，再在 DSH 调用 `mcp__codegraph__codegraph_explore` 时传入该工程的绝对 `projectPath`。配置不固定工程目录，适用于共享后端下的多个工程。配置改动后重启宿主；已构建的 macOS 应用读取其打包副本，源码改动需重新构建启动器后生效。连接失败由 DSH 记录，不阻止其他可选插件启动。
 
+### 会话观测 MCP（本机试点）
+
+默认关闭。共享 DSH Host 启动时检查其已有的进程回执目录（与 `desktop-host.json` 同目录，即 Station 数据根目录下的 `global/.dsh-workflow/desktop/`）中的 `session-observation-mcp.json`。缺少文件、文件权限或配置不合格时不会启动该 MCP，不影响 DSH 服务。此目录不是 Web 访问服务配置目录。
+
+观测配置仅允许 `port`、`bearer`、`sessions` 和可选的 `activeSessionIds`。前三项分别为未占用的本机端口、专用随机凭据和已明确授权的会话（每项只有 `id`、`label`）。指定会话状态与历史标记从 `sessions` 读取，最多 8 项；活跃清单可单独配置最多 128 项，每页 100，分页不重采。单纯列清单的权限不授予读取历史的权限。配置为当前系统用户持有、权限 `0600` 的普通文件，拒绝符号链接。凭据留在本机，不写仓库、日志或参数。
+
+启用后入口为 `http://127.0.0.1:<port>/mcp`。使用新版 MCP 时，Dot 主动列清单、拉指定会话的活动标记。观测默认不返回对话原文或语义判断；隔离夹具验证过重复输出诊断，不代表已验所有偏离需求的情况。不提供 DSH 主动推送、事件订阅、审批或拒绝入口。
+
+要让共享 Host 自己维持现有 Dot 连接，在同一个回执目录内放置权限 `0600` 的 `station-dot-tunnel.json`，字段仅有 `directory`（原已核验的本机私有目录）、`tunnelId`（现有注册的 ID）和 `clientSha256`（已核验的客户端摘要）。目录为 `0700`，已有固定名客户端和运行凭据由 Host 校验，不随包分发。没有有效配置就不启用。Dot 测试联调窗口预留 1 小时；正式连接跟随共享 Host 的生命周期，不要求用户每轮重新注册。
+
+提示词投递默认不公布。仅当本机回执目录下存在当前用户拥有的 `0700` 普通目录 `station-dot-approved-prompts/` 时，才公布独立的写工具。每次须由受信任的本机确认流程在该目录写入 `<request UUID>.json`（`0600`），精确记录 `sessionId`、经 `stationDotHostPromptDigest` 产生的 `digest` 与未来最多一小时的毫秒时间戳 `expiresAt`。Dot 端看到「同意」仍不能跳过本机确认记录。入箱与执行完成分开。发前持久化保留编号；回执不明确、重启或重复调用都不会重复入箱。配置生效需重启新包的共享 Host，不影响当前未切换的旧包。
+
 工程检查入口是 `node scripts/run-project-tests.mjs`。Flutter 按 `macos-launcher/flutter/check.sh` 验证。应用和工程检查均只支持 macOS ARM64，发布工作流构建 ARM64 DMG。
 
 本机容器使用 OrbStack 的 Docker 引擎和标准 Docker Compose；容器与 macOS 原生构建的执行边界见 [AGENTS.md](AGENTS.md#本机容器工作流)。

@@ -1,6 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { spawn } from 'node:child_process'
+import { createServer } from "node:net"
+import { once } from "node:events"
 import { createRequire } from 'node:module'
 import { mkdtemp, mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -17,6 +19,15 @@ test('Web Host starts the real DSH runtime and exits cleanly', { timeout: 60_000
   const root = await mkdtemp(join(tmpdir(), 'station-web-host-test-'))
   const home = join(root, 'home'), profile = join(home, 'profiles/desktop'), receipt = join(root, 'receipt')
   await mkdir(home); boot.initProfile(profile, templates.web.bundles)
+  await mkdir(receipt, { mode: 0o700 })
+  const reservation = createServer().listen(0, "127.0.0.1")
+  await once(reservation, "listening")
+  const { port: observationPort } = reservation.address()
+  await new Promise(resolve => reservation.close(resolve))
+  const fakeBearer = "z".repeat(43)
+  await writeFile(join(receipt, "session-observation-mcp.json"), JSON.stringify({
+    port: observationPort, bearer: fakeBearer, sessions: [{id:"unavailable-fixture",label:"Isolated fixture"}],
+  }), { mode: 0o600 })
   const bridge = fileURLToPath(new URL('./station-bridge.mjs', import.meta.url))
   const lingering = join(root, 'lingering.mjs'), marker = join(root, 'lingering-loaded')
   await writeFile(lingering, `import { writeFileSync } from 'node:fs'
@@ -78,8 +89,19 @@ test('Web Host starts the real DSH runtime and exits cleanly', { timeout: 60_000
     body: JSON.stringify({ type: 'client-request', rpcId: 'fixture', method: 'pluginInventory/list', payload: { args: {} } }),
     signal: AbortSignal.timeout(5000) })
   assert.equal((await request()).status, 200)
+  const mcp = (authorization = "Bearer " + fakeBearer) => fetch(
+    "http://127.0.0.1:" + observationPort + "/mcp", {
+      method:"POST", headers:{ authorization, "content-type":"application/json",
+        accept:"application/json, text/event-stream" },
+      body:JSON.stringify({jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"session_status"}}),
+      signal:AbortSignal.timeout(2500),
+    })
+  assert.equal((await mcp("Bearer incorrect")).status,401)
+  const projection = (await (await mcp()).json()).result.structuredContent
+  assert.deepEqual(projection.sessions,[{label:"Isolated fixture",status:"unavailable"}])
   child.send({ type: 'shutdown' })
   await receive(message => message.type === 'shutdown-complete')
   assert.deepEqual(await Promise.race([exited, delay(1500, 'Host stayed alive after its shutdown acknowledgement', { ref: false })]),
     { code: 0, signal: null })
+  await assert.rejects(()=>mcp())
 })
