@@ -5,6 +5,7 @@ export function createStationActiveListV2({enabled,ctx,key,readApproved,globalAc
   if(enabled!==true)return null
   if(typeof ctx?.agents?.list!=='function'||(!globalActiveList&&typeof readApproved!=='function'))throw new TypeError('invalid_live_scope')
   let snapshot=null, reading=false
+  const issuedAliases=new Map()
   const approved=()=>{
     const ids=readApproved()
     if(!Array.isArray(ids)||ids.length>128||ids.some(id=>!idShape(id))||new Set(ids).size!==ids.length)
@@ -16,11 +17,23 @@ export function createStationActiveListV2({enabled,ctx,key,readApproved,globalAc
     const policy=approved()
     return snapshot?.ids.filter(id=>policy.has(id))??[]
   }})
-  const project=page=>({version:2,kind:'active_sessions',coverage:page.gap?'partial':'approved_live_capture',
+  const project=page=>{
+    if(globalActiveList&&!page.gap){
+      const idsByAlias=new Map(snapshot.ids.map(id=>[observer.aliasFor(id),id]))
+      for(const {alias} of page.rows){
+        if(!idsByAlias.has(alias))continue
+        issuedAliases.delete(alias)
+        issuedAliases.set(alias,idsByAlias.get(alias))
+      }
+      while(issuedAliases.size>4096)issuedAliases.delete(issuedAliases.keys().next().value)
+    }
+    return ({version:2,kind:'active_sessions',coverage:page.gap?'partial':'approved_live_capture',
     captured_at:snapshot?.capturedAt??null,gap:page.gap,next_cursor:page.next_cursor,
     rows:page.rows.map(r=>({alias:r.alias}))})
+  }
   const gap=code=>({version:2,kind:'active_sessions',coverage:'partial',captured_at:null,gap:code,next_cursor:null,rows:[]})
   return Object.freeze({
+    resolveAlias: alias=>globalActiveList?issuedAliases.get(alias):undefined,
     async begin(){
       if(reading)return gap('busy')
       reading=true

@@ -33,7 +33,7 @@ export function createStationMcpEvents({enabled,identityKey,allows,callback,acce
   if(!Number.isSafeInteger(verifyTimeoutMs)||verifyTimeoutMs<1500||verifyTimeoutMs>10000)throw Error('invalid_verification_deadline')
   if(!Buffer.isBuffer(identityKey)||identityKey.length!==32||typeof allows!=='function'||typeof transport!=='function')
     throw new TypeError('invalid_events_fixture')
-  if(![NAME,'dsh.approval.pending','dsh.turn.ended'].includes(eventName)||
+  if(![NAME,'dsh.approval.pending','dsh.turn.ended','dsh.interaction.pending'].includes(eventName)||
      (eventName!==NAME&&(eventDefinition?.name!==eventName||eventDefinition?.payloadSchema?.type!=='object')))
     throw Error('invalid_event_definition')
   const advertised=eventDefinition?structuredClone(eventDefinition):definition()

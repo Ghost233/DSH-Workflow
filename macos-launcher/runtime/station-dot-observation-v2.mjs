@@ -18,6 +18,7 @@ export function createStationObservationV2({enabled,key,readApproved,maxScope=12
   const epoch=randomUUID()
   let current=null
   const h=(label,value)=>createHmac('sha256',key).update(JSON.stringify([label,value])).digest('hex')
+  const aliasFor=id=>'s2_'+h('alias',id)
   function scope(){
     const a=readApproved()
     if(!Array.isArray(a)||a.length>maxScope||a.some(x=>!goodId(x))||new Set(a).size!==a.length)bad()
@@ -46,7 +47,7 @@ export function createStationObservationV2({enabled,key,readApproved,maxScope=12
       })
     }
     const valid=states.has(p?.state)&&Array.isArray(p.pending)&&p.pending.length<=3&&p.pending.every(x=>classes.has(x))
-    return {alias:'s2_'+h('alias',id),state:valid?p.state:'unavailable',
+    return {alias:aliasFor(id),state:valid?p.state:'unavailable',
       pending:valid&&p.state!=='unavailable'?[...new Set(p.pending)].sort():[]}
   }
   const envelope=(gap=null,rows=[],next_cursor=null,checkpoint=null)=>({
@@ -92,7 +93,7 @@ export function createStationObservationV2({enabled,key,readApproved,maxScope=12
     // This is a completed snapshot checkpoint, never a native-event receipt.
     return envelope(null,rows,null,{epoch,snapshot:current.id,scope:current.scope})
   }
-  return Object.freeze({begin,page,checkpointStatus(previous){
+  return Object.freeze({begin,page,aliasFor,checkpointStatus(previous){
     if(!previous||typeof previous.scope!=='string'||typeof previous.epoch!=='string'||typeof previous.snapshot!=='string')bad()
     if(previous.epoch!==epoch)return 'host_restarted'
     if(previous.scope!==h('scope',scope()))return 'scope_changed'

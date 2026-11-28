@@ -1,12 +1,15 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { createServer } from 'node:net'
-import { once } from 'node:events'
-import { mkdtemp, rm, chmod, symlink, writeFile } from 'node:fs/promises'
+import { EventEmitter, once } from 'node:events'
+import { mkdtemp, realpath, rm, chmod, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { createStationPullTools } from './station-dot-pull-tools.mjs'
 import { loadObservationConfig, startSessionObservation } from './session-observation-mcp.mjs'
+import { APPROVAL_PENDING, startStationApprovalEvents } from './station-dot-approval-events.mjs'
+import { INTERACTION_PENDING, combineStationInteractionEvents, startStationQuestionEvents } from './station-dot-question-events.mjs'
+import { serveWebHost } from './web-host.mjs'
 
 async function config() {
   const net = createServer().listen(0, '127.0.0.1')
@@ -130,4 +133,130 @@ test('paired global watch accepts one native ID without selections and forwards 
  assert.doesNotMatch(JSON.stringify(delta),/PRIVATE_BODY|unlisted-test-session/)
  assert.equal((await call({session_id:'unknown-session'})).result.structuredContent.status,'source_unavailable')
  assert.deepEqual(calls,['unlisted-test-session','unlisted-test-session','unknown-session'])
+})
+
+
+test('both HTTP protocol versions discover and route approval and interaction subscriptions independently',async t=>{
+ const c=await config(),callback='https://example.com/hooks/dot'
+ const ctx={on(){return ()=>{}},typertGateway:{getPendingRemoteEvents:()=>[]}}
+ const transport=async({body})=>({status:200,json:{challenge:JSON.parse(body).challenge}})
+ const approval=startStationApprovalEvents({ctx,key:Buffer.alloc(32,5),principal:'owner',callback,transport})
+ const question=startStationQuestionEvents({
+  ctx,key:Buffer.alloc(32,6),principal:'owner',callback,transport,
+ })
+ const srv=await startSessionObservation({config:c,sessionController:{state:()=>null},
+  approvalEvents:()=>combineStationInteractionEvents(approval,question)})
+ t.after(()=>srv.close())
+ const legacy='2025-06-18',modern='2026-07-28'
+ const request=(version,method,params={},headerName)=>fetch('http://127.0.0.1:'+c.port+'/mcp',{
+  method:'POST',headers:{authorization:'Bearer '+c.bearer,'content-type':'application/json',
+   accept:'application/json, text/event-stream','mcp-protocol-version':version,
+   ...(version===modern?{'mcp-method':method,...(headerName?{'mcp-name':headerName}:{})}:{})},
+  body:JSON.stringify({jsonrpc:'2.0',id:1,method,params})
+ })
+ const rpc=async(...args)=>(await request(...args)).json()
+ assert.deepEqual((await rpc(modern,'server/discover')).result.capabilities,{tools:{},events:{}})
+ assert.deepEqual((await rpc(legacy,'initialize',{protocolVersion:legacy})).result.capabilities,{tools:{},events:{}})
+ for(const version of [legacy,modern]){
+  const events=(await rpc(version,'events/list')).result.events
+  assert.deepEqual(events.map(e=>e.name),[APPROVAL_PENDING,INTERACTION_PENDING])
+  assert.equal(events[0].payloadSchema.properties.kind.const,'approval')
+  assert.deepEqual(events[1].payloadSchema.properties.kind.enum,['question','plan_review','access_approval'])
+ }
+ assert.equal((await request(modern,'events/subscribe',{name:INTERACTION_PENDING},APPROVAL_PENDING)).status,400)
+ assert.equal((await rpc(legacy,'events/list',{extra:true})).error.code,-32602)
+ const secret='whsec_'+Buffer.alloc(32,9).toString('base64')
+ const subscribe=name=>({name,arguments:{},delivery:{mode:'webhook',url:callback,secret}})
+ const oldSub=(await rpc(legacy,'events/subscribe',subscribe(APPROVAL_PENDING))).result
+ const newSub=(await rpc(modern,'events/subscribe',{
+  ...subscribe(INTERACTION_PENDING),_meta:{'io.modelcontextprotocol/protocolVersion':modern},
+ },INTERACTION_PENDING)).result
+ assert.match(oldSub.id,/^sub_/)
+ assert.match(newSub.id,/^sub_/)
+ assert.notEqual(oldSub.id,newSub.id)
+ const stop={name:INTERACTION_PENDING,arguments:{},delivery:{mode:'webhook',url:callback}}
+ assert.deepEqual((await rpc(legacy,'events/unsubscribe',stop)).result,{})
+ assert.equal((await rpc(modern,'events/subscribe',subscribe(APPROVAL_PENDING),APPROVAL_PENDING)).result.id,oldSub.id)
+})
+
+test('the Web Host reads an existing global pairing and exposes both events without a tunnel',async t=>{
+ const c={...(await config()),globalActiveList:true,sessions:[]}
+ const receiptDirectory=await realpath(await mkdtemp(join(tmpdir(),'station-paired-web-')))
+ let host
+ t.after(async()=>{try{await host?.stop()}finally{await rm(receiptDirectory,{recursive:true,force:true})}})
+ await writeFile(join(receiptDirectory,'station-dot-pairing.json'),JSON.stringify({
+  observation:c,
+  transport:{directory:receiptDirectory,tunnelId:'tunnel_'+'a'.repeat(32),clientSha256:'a'.repeat(64)},
+ }),{mode:0o600})
+ await writeFile(join(receiptDirectory,'station-dot-tunnel-preference.json'),'{"enabled":false}',{mode:0o600})
+ const listeners=new Set()
+ const ctx={
+  on(name){listeners.add(name);return ()=>listeners.delete(name)},
+  sessionController:{state:()=>null},
+  typertGateway:{getPendingRemoteEvents:()=>[]},
+ }
+ host=await serveWebHost({
+  receiptDirectory,
+  launchHost:async()=>({ctx,shutdown:{shutdown:async()=>{}}}),
+  readHost:async()=>({pid:process.pid,url:'http://127.0.0.1'}),
+  ipc:new EventEmitter(),
+ })
+ const response=await fetch('http://127.0.0.1:'+c.port+'/mcp',{
+  method:'POST',headers:{authorization:'Bearer '+c.bearer,'content-type':'application/json',
+   accept:'application/json, text/event-stream','mcp-protocol-version':'2026-07-28','mcp-method':'events/list'},
+  body:JSON.stringify({jsonrpc:'2.0',id:1,method:'events/list'}),
+ })
+ assert.equal(response.status,200)
+ assert.deepEqual((await response.json()).result.events.map(event=>event.name),[APPROVAL_PENDING,INTERACTION_PENDING])
+ assert.equal(listeners.has('session/event'),true)
+ assert.equal(listeners.has('user-questions/request'),true)
+ await host.stop()
+ assert.equal(listeners.has('user-questions/request'),false)
+})
+
+test('legacy scoped watch keeps its configured-label error and never reads an unknown session',async t=>{
+ const c=await config(),calls=[]
+ const sessionController={state:()=>null,events:async ({address})=>{
+  calls.push(address.sessionId)
+  return {cursor:-1,hasMore:false,records:[]}
+ }}
+ const srv=await startSessionObservation({config:c,sessionController,...createStationPullTools({sessionController},c)})
+ t.after(()=>srv.close())
+ const call=async session_label=>(await(await fetch('http://127.0.0.1:'+c.port+'/mcp',{
+  method:'POST',headers:{authorization:'Bearer '+c.bearer,'content-type':'application/json',accept:'application/json, text/event-stream'},
+  body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'watch_session',arguments:{session_label}}})
+ })).json())
+ assert.equal((await call('Missing')).error.code,-32000)
+ assert.deepEqual(calls,[])
+ assert.equal((await call('Configured test')).result.structuredContent.status,'baseline_only')
+ assert.deepEqual(calls,['private-session-1'])
+})
+
+test('paired active-list aliases resolve for cursor history without exposing native IDs',async t=>{
+ const c={...(await config()),sessions:[],globalActiveList:true}
+ const id='hidden-native-session'
+ let handles=[{id}]
+ const calls=[]
+ const sessionController={state:()=>null,events:async({address})=>{
+  calls.push(address.sessionId)
+  return {cursor:0,hasMore:false,records:[{type:'event',event:{seq:0,time:1,type:'turn/end',data:{text:'PRIVATE_BODY'}}}]}
+ }}
+ const srv=await startSessionObservation({config:c,sessionController,...createStationPullTools({agents:{list:()=>handles},sessionController},c)})
+ t.after(()=>srv.close())
+ const call=async(name,args={})=>(await(await fetch('http://127.0.0.1:'+c.port+'/mcp',{
+  method:'POST',headers:{authorization:'Bearer '+c.bearer,'content-type':'application/json',accept:'application/json, text/event-stream'},
+  body:JSON.stringify({jsonrpc:'2.0',id:1,method:'tools/call',params:{name,arguments:args}})
+ })).json()).result.structuredContent
+ const page=await call('list_active_sessions')
+ const alias=page.rows[0].alias
+ assert.match(alias,/^s2_[a-f0-9]{64}$/)
+ assert.doesNotMatch(JSON.stringify(page),/hidden-native-session/)
+ assert.equal((await call('watch_session',{session_id:alias})).status,'baseline_only')
+ handles=[]
+ assert.deepEqual((await call('list_active_sessions')).rows,[])
+ const delta=await call('watch_session',{session_id:alias,after:-1})
+ assert.deepEqual(delta.events,[{seq:0,time:1,kind:'turn/end'}])
+ assert.doesNotMatch(JSON.stringify(delta),/PRIVATE_BODY|hidden-native-session/)
+ assert.equal((await call('watch_session',{session_id:'s2_'+'0'.repeat(64)})).status,'source_unavailable')
+ assert.deepEqual(calls,[id,id])
 })

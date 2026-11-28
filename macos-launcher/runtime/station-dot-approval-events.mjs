@@ -5,6 +5,7 @@ import {join} from 'node:path'
 import {createStationMcpEvents} from './station-dot-mcp-events.mjs'
 import {createStationHttpsDelivery,createOfficialStationHttpsDelivery,isOfficialStationCallback} from './station-dot-https-delivery.mjs'
 import {openStationSubscriptionStore} from './station-dot-subscription-store.mjs'
+import {combineStationInteractionEvents,startPairedQuestionEvents} from './station-dot-question-events.mjs'
 
 export const APPROVAL_PENDING = 'dsh.approval.pending'
 const definition = {name:APPROVAL_PENDING, description:'A DSH session is waiting for an owner approval.',
@@ -36,8 +37,23 @@ export async function loadStationApprovalReceiver(directory) {
 }
 
 export async function startPairedStationApprovalEvents({ctx,directory,bearer,report=()=>{}}) {
-  const approval=await loadStationApprovalReceiver(directory)
-  const transport=approval?createStationHttpsDelivery({enabled:true,approval,budget:10000}):createOfficialStationHttpsDelivery()
+  const receiver=await loadStationApprovalReceiver(directory)
+  const delivery={
+    callback:receiver?.url,
+    acceptCallback:receiver?undefined:isOfficialStationCallback,
+    transport:receiver?createStationHttpsDelivery({enabled:true,approval:receiver,budget:10000}):createOfficialStationHttpsDelivery(),
+  }
+  const [approval,interaction]=await Promise.allSettled([
+    startPairedNativeApprovalEvents({ctx,directory,bearer,...delivery,address:receiver?.address,report}),
+    startPairedQuestionEvents({ctx,directory,bearer,...delivery,address:receiver?.address,
+      report:(state,code)=>report('interaction_'+state,code)}),
+  ])
+  if(approval.status==='rejected'){try {report('source_unavailable')} catch {}}
+  if(interaction.status==='rejected'){try {report('interaction_source_unavailable')} catch {}}
+  return combineStationInteractionEvents(approval.value,interaction.value)
+}
+
+async function startPairedNativeApprovalEvents({ctx,directory,bearer,callback,acceptCallback,address,transport,report}) {
   const key=createHash('sha256').update('station-dot-approval\0').update(bearer).digest()
   const principal='paired-owner'
   const scope='station-dot-approval-'+key.toString('hex').slice(0,24)
@@ -46,8 +62,8 @@ export async function startPairedStationApprovalEvents({ctx,directory,bearer,rep
   const stat=await lstat(privateDir)
   if(!stat.isDirectory()||stat.uid!==process.getuid()||(stat.mode&0o777)!==0o700)
     throw Error('approval_subscription_store_invalid')
-  const receipt=openStationSubscriptionStore({directory:privateDir,key,binding:[scope,principal,approval?.url??"official-mcp-v1",approval?.address??null]})
-  try { return startStationApprovalEvents({ctx,key,principal,callback:approval?.url,acceptCallback:approval?undefined:isOfficialStationCallback,transport,receipt,report}) }
+  const receipt=openStationSubscriptionStore({directory:privateDir,key,binding:[scope,principal,callback??'official-mcp-v1',address??null]})
+  try { return startStationApprovalEvents({ctx,key,principal,callback,acceptCallback,transport,receipt,report}) }
   catch(error) { receipt.close(); throw error }
 }
 

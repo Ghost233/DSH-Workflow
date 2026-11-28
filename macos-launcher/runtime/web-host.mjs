@@ -63,12 +63,13 @@ export async function serveWebHost({ resources, profile, receiptDirectory, overl
           config, sessionController:ctx.sessionController,
           ...createStationPullTools(ctx, config),
           approvedPromptDelivery:prompt?.deliver,
-          // The paired endpoint owns approval subscriptions; stale or missing
+          // The paired endpoint owns notification subscriptions; stale or missing
           // receiver configuration cannot disable the independent query tools.
           approvalEvents:pairedForRead&&config.globalActiveList===true?async()=> {
             try { return await startPairedStationApprovalEvents({ctx,directory:receiptDirectory,bearer:config.bearer,
-              report:(state,status)=>console.error('Station Dot 审批事件：'+state+(status===undefined?'':' HTTP '+status))}) }
-            catch { console.error('Station Dot 审批通知未启用：接收端或事件源不可用。'); return null }
+              report:(state,status)=>console.error('Station Dot '+(state.startsWith('interaction_')?'互动':'审批')+
+                '事件：'+state+(status===undefined?'':' HTTP '+status))}) }
+            catch { console.error('Station Dot 通知未启用：接收端配置不可用。'); return null }
           }:undefined,
           // Independent local completion cache for pull-based session status.
           observeTurnEnds:listener => ctx.on('session/event', listener),

@@ -40,7 +40,7 @@ const watchTool = Object.freeze({
 })
 const globalWatchTool = Object.freeze({
   ...watchTool,
-  description:'Poll bounded activity markers for exactly one DSH session by ID. Requires the paired Dot connection, not a per-session allowlist. Does not read conversation text or modify sessions.',
+  description:'Poll bounded activity markers for one DSH session by native ID or an alias from list_active_sessions. Requires the paired Dot connection. Does not read conversation text or modify sessions.',
   inputSchema:{type:'object',properties:{session_id:{type:'string',pattern:ID.source,maxLength:128},after:{type:'integer',minimum:-1}},
     required:['session_id'],additionalProperties:false},
 })
@@ -258,7 +258,7 @@ export async function startSessionObservation({ config, sessionController, obser
         if(a.error||b.error)return json(r,200,a.error?a:b)
         return respond({events:[...a.result.events,...b.result.events]})
       }
-      const target=approval&&(msg.method==='events/list'||request.params?.name===approval.name)
+      const target=approval&&(msg.method==='events/list'||request.params?.name===approval.name||approval.hasName?.(request.params?.name)===true)
       const response=target?await approval.rpc(request):(!modern&&terminal?await terminal.rpc(eventPrincipal,request):null)
       if(!response)return error(r,id,-32602,'Unknown event')
       return modern&&response.result?respond(response.result):json(r,200,response)
@@ -287,8 +287,14 @@ export async function startSessionObservation({ config, sessionController, obser
     if(watchedHistory&&msg.params?.name===watchTool.name){
       const args=msg.params.arguments
       if(!watchArgs(args,config.globalActiveList===true))return error(r,id,-32602,'Invalid params')
-      const sessionId=config.globalActiveList?args.session_id:selections.find(row=>row.label===args.session_label)?.id
-      if(!sessionId||closed||watchInFlight)return error(r,id,-32000,'Watched session unavailable')
+      const input=args.session_id
+      const sessionId=config.globalActiveList?(/^s2_[0-9a-f]{64}$/.test(input)
+        ? activeList?.resolveAlias?.(input) : input):selections.find(row=>row.label===args.session_label)?.id
+      if(closed||watchInFlight||(!config.globalActiveList&&!sessionId))return error(r,id,-32000,'Watched session unavailable')
+      if(!sessionId){
+        const result=watchResult({status:'source_unavailable',cursor:null,events:[]})
+        return respond({content:[{type:'text',text:JSON.stringify(result)}],structuredContent:result})
+      }
       watchInFlight=true
       try {
         const value=await watchedHistory({selectedSession:sessionId,after:args.after??null})

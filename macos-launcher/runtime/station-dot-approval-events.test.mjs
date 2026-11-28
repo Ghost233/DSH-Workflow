@@ -1,12 +1,17 @@
 import {test} from 'node:test'
 import assert from 'node:assert/strict'
-import {randomUUID} from 'node:crypto'
+import {createHash, randomUUID} from 'node:crypto'
 import {createServer} from 'node:net'
 import {once} from 'node:events'
+import {mkdir, mkdtemp, readFile, realpath, rm, writeFile} from 'node:fs/promises'
+import {tmpdir} from 'node:os'
+import {join} from 'node:path'
 import {setTimeout as sleep} from 'node:timers/promises'
 import {startSessionObservation} from './session-observation-mcp.mjs'
-import {APPROVAL_PENDING,startStationApprovalEvents} from './station-dot-approval-events.mjs'
+import {APPROVAL_PENDING,startPairedStationApprovalEvents,startStationApprovalEvents} from './station-dot-approval-events.mjs'
+import {INTERACTION_PENDING} from './station-dot-question-events.mjs'
 import {signStationWebhook} from './station-dot-mcp-events.mjs'
+import {openStationSubscriptionStore} from './station-dot-subscription-store.mjs'
 
 test('paired MCP advertises approvals in both protocol versions and delivers only live, redacted approvals',async t=>{
   const listener= createServer().listen(0,'127.0.0.1')
@@ -117,4 +122,58 @@ test('official enrollment accepts a verified subscriber-selected callback, prese
   assert.equal(restored.hasSubscriber('owner'),true)
   assert.equal((await restored.deliverDurable('owner',{eventId:'test'})).status,204)
   assert.equal(posts,2)
+})
+
+async function pairedFixture(t){
+  const directory=await realpath(await mkdtemp(join(tmpdir(),'station-dot-events-')))
+  const bearer='p'.repeat(43), reports=[]
+  const ctx={on(){return ()=>{}},typertGateway:{getPendingRemoteEvents:()=>[]}}
+  let events
+  t.after(async()=>{try{await events?.close()}finally{await rm(directory,{recursive:true,force:true})}})
+  return {directory,bearer,reports,async start(){
+    events=await startPairedStationApprovalEvents({ctx,directory,bearer,report:state=>reports.push(state)})
+    return events
+  }}
+}
+
+test('legacy pinned approval receipt is restored when the interaction receipt has a different receiver binding',async t=>{
+  const fixture=await pairedFixture(t)
+  const receiver={url:'https://callback.xyz/mcp-events/recipient',address:'8.8.8.8'}
+  const receiverFile=join(fixture.directory,'station-dot-approval-receiver.json')
+  await writeFile(receiverFile,JSON.stringify(receiver),{mode:0o600})
+  const now=Date.now()
+  const lease={signingKey:'whsec_'+Buffer.alloc(32,7).toString('base64'),until:now+60000,verifiedAt:now}
+  const principal='paired-owner'
+  const stores={}
+  for(const [name,address] of [['approval',receiver.address],['question','1.1.1.1']]){
+    const key=createHash('sha256').update('station-dot-'+name+'\0').update(fixture.bearer).digest()
+    const scope='station-dot-'+name+'-'+key.toString('hex').slice(0,24)
+    const directory=join(fixture.directory,scope)
+    await mkdir(directory,{mode:0o700})
+    const options={directory,key,binding:[scope,principal,receiver.url,address]}
+    const receipt=openStationSubscriptionStore(options)
+    try{receipt.write(lease)}finally{receipt.close()}
+    stores[name]=options
+  }
+  const events=await fixture.start()
+  const call=(method,params)=>events.rpc({jsonrpc:'2.0',id:1,method,params})
+  assert.deepEqual((await call('events/list')).result.events.map(event=>event.name),[APPROVAL_PENDING])
+  assert.deepEqual(fixture.reports,['interaction_source_unavailable'])
+  const unsubscribe={name:APPROVAL_PENDING,arguments:{},delivery:{mode:'webhook',url:receiver.url}}
+  assert.equal((await call('events/unsubscribe',{...unsubscribe,delivery:{mode:'webhook',url:'https://other.example.com/'}})).error.code,-32602)
+  assert.deepEqual((await call('events/unsubscribe',unsubscribe)).result,{})
+  await events.close()
+  const restored=openStationSubscriptionStore(stores.approval)
+  try{assert.equal(restored.read(),null)}finally{restored.close()}
+  assert.deepEqual(JSON.parse(await readFile(receiverFile,'utf8')),receiver)
+})
+
+test('an unavailable legacy subscription store does not disable the interaction event',async t=>{
+  const fixture=await pairedFixture(t)
+  const key=createHash('sha256').update('station-dot-approval\0').update(fixture.bearer).digest()
+  await writeFile(join(fixture.directory,'station-dot-approval-'+key.toString('hex').slice(0,24)),'invalid')
+  const events=await fixture.start()
+  const response=await events.rpc({jsonrpc:'2.0',id:1,method:'events/list'})
+  assert.deepEqual(response.result.events.map(event=>event.name),[INTERACTION_PENDING])
+  assert.deepEqual(fixture.reports,['source_unavailable'])
 })
